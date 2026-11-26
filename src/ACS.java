@@ -1,5 +1,4 @@
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.Queue;
 
@@ -8,8 +7,11 @@ public class ACS {
     // Tier 1: Preemptive Round Robin queue
     Queue<Process> tier1Queue = new LinkedList<>();
 
-    // Tier 2: Non-preemptive Priority queue (aged via Tier 3)
-    ArrayList<Process> tier2Queue = new ArrayList<>();
+    // Tier 2: Non-preemptive Priority queue (Tier2.java)
+    Tier2 tier2 = new Tier2();
+
+    // Tier 3: Aging (Tier3.java)
+    Tier3 tier3 = new Tier3();
 
     // Completed processes
     ArrayList<Process> completedProcesses = new ArrayList<>();
@@ -30,7 +32,7 @@ public class ACS {
         }
 
         tier1Queue.clear();
-        tier2Queue.clear();
+        tier2 = new Tier2();
         completedProcesses.clear();
         demotionMatrix.clear();
 
@@ -57,21 +59,11 @@ public class ACS {
                 if (!tier1Queue.isEmpty()) {
                     nextCandidate = tier1Queue.poll();
                     nextIsTier2 = false;
-                } else if (!tier2Queue.isEmpty()) {
+                } else if (!tier2.isEmpty()) {
                     // Tier 3 Aging: recalculate priority of waiting Tier 2 processes
-                    for (Process p : tier2Queue) {
-                        int waited = Math.max(0, currentTime - p.tier2EntryTime);
-                        p.currPriority = Math.max(1, p.iniPriority - (waited / 4));
-                    }
+                    tier3.applyAging(tier2, currentTime);
 
-                    // Lower currPriority = higher priority; tie-break by tier2EntryTime, then id
-                    tier2Queue.sort(
-                            Comparator.comparingInt((Process p) -> p.currPriority)
-                                    .thenComparingInt(p -> p.tier2EntryTime)
-                                    .thenComparingInt(p -> p.id)
-                    );
-
-                    nextCandidate = tier2Queue.remove(0);
+                    nextCandidate = tier2.pollNextProcess();
                     nextIsTier2 = true;
                 }
 
@@ -124,9 +116,8 @@ public class ACS {
                     System.out.println("  Completed: " + currentProcess);
                     currentProcess = null;
                     runningTier2 = false;
-                } else if (!runningTier2 && quantumUsed == quantum) {
-                    currentProcess.tier2EntryTime = currentTime + 1;
-                    tier2Queue.add(currentProcess);
+                } else if (!runningTier2
+                        && tier2.checkDemotion(currentProcess, quantumUsed, quantum, currentTime + 1)) {
                     System.out.println("  Demoted to Tier 2: " + currentProcess
                             + " (Remaining: " + currentProcess.remainingTime + ")");
                     currentProcess = null;
@@ -142,7 +133,7 @@ public class ACS {
             System.out.println("  Tier 1 Queue: "
                     + (tier1Queue.isEmpty() ? "[Empty]" : queueToString(tier1Queue)));
             System.out.println("  Tier 2 Queue: "
-                    + (tier2Queue.isEmpty() ? "[Empty]" : queueToString(tier2Queue)));
+                    + (tier2.isEmpty() ? "[Empty]" : queueToString(tier2.getWaitingProcesses())));
             System.out.println("--------------------------------");
 
             currentTime++;
@@ -165,7 +156,7 @@ public class ACS {
     // Record each time step in Demotion Matrix
     private void recordMatrix(String runningProcess) {
         String tier1State = queueToString(tier1Queue);
-        String tier2State = queueToString(tier2Queue);
+        String tier2State = queueToString(tier2.getWaitingProcesses());
 
         String row = String.format(
                 "%-6d | %-18s | %-25s | %-25s",
