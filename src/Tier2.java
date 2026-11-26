@@ -1,22 +1,22 @@
 import java.util.ArrayList;
 
+// Tier 2: Non-Preemptive Priority queue for processes demoted from Tier 1.
 public class Tier2 {
 
-    // Processes that were demoted from Tier 1.
-    // The list keeps insertion order, which we use when priorities are equal.
+    // Once a process is placed here it stays until it finishes, which makes Tier 2 non-preemptive.
+    private Process runningProcess = null;
+
+    // Insertion order is kept, so equal priorities are served first come, first served.
     private final ArrayList<Process> readyQueue = new ArrayList<>();
 
-    // Stores the time at which each process entered Tier 2.
-    // Tier 3 can use this to calculate how long a process has been waiting.
+    // Time each process entered Tier 2, used by Tier 3 for aging.
     private final ArrayList<Integer> enteredTier2At = new ArrayList<>();
 
-    // Add a process to Tier 2 when it uses its whole Tier 1 quantum.
     public void addProcess(Process process, int currentTime) {
         if (process == null) {
             return;
         }
 
-        // Prevent accidentally adding the same process twice.
         if (readyQueue.contains(process)) {
             return;
         }
@@ -25,9 +25,16 @@ public class Tier2 {
         enteredTier2At.add(currentTime);
     }
 
-    // Return the waiting process with the highest priority.
-    // In this assignment, a smaller priority number means higher priority.
-    // If priorities are equal, the process that entered Tier 2 first wins.
+    // A process that used its whole quantum without finishing is a CPU-bound batch job.
+    public boolean checkDemotion(Process process, int timeUsed, int quantum, int currentTime) {
+        if (timeUsed == quantum && process.remainingTime > 0) {
+            addProcess(process, currentTime);
+            return true;
+        }
+        return false;
+    }
+
+    // Smaller priority number = higher priority.
     public Process peekNextProcess() {
         if (readyQueue.isEmpty()) {
             return null;
@@ -47,7 +54,6 @@ public class Tier2 {
         return readyQueue.get(bestIndex);
     }
 
-    // Remove and return the next process selected by priority.
     public Process pollNextProcess() {
         Process nextProcess = peekNextProcess();
 
@@ -63,24 +69,40 @@ public class Tier2 {
         return nextProcess;
     }
 
-    // Check whether Tier 2 has no waiting processes.
+    public Process startNextProcess() {
+        runningProcess = pollNextProcess();
+        return runningProcess;
+    }
+
+    // Returns true if the process finished in this time unit.
+    public boolean runOneTimeUnit(int currentTime) {
+        if (runningProcess == null) {
+            return false;
+        }
+
+        runningProcess.remainingTime--;
+
+        if (runningProcess.remainingTime == 0) {
+            runningProcess.finishTime = currentTime + 1;
+            runningProcess = null;
+            return true;
+        }
+        return false;
+    }
+
     public boolean isEmpty() {
         return readyQueue.isEmpty();
     }
 
-    // Number of processes currently waiting in Tier 2.
     public int size() {
         return readyQueue.size();
     }
 
-    // Return a copy so other classes can inspect the queue safely.
-    // Tier 3 may update currPriority on the Process objects in this list.
     public ArrayList<Process> getWaitingProcesses() {
         return new ArrayList<>(readyQueue);
     }
 
-    // How long this process has been waiting in Tier 2.
-    // Returns -1 if the process is not currently waiting in this queue.
+    // Returns -1 if the process is not waiting in Tier 2.
     public int getWaitingTime(Process process, int currentTime) {
         int index = readyQueue.indexOf(process);
 
@@ -91,7 +113,6 @@ public class Tier2 {
         return currentTime - enteredTier2At.get(index);
     }
 
-    // Print the current waiting queue for the scheduling timeline.
     public void printQueue() {
         if (readyQueue.isEmpty()) {
             System.out.println("Tier 2: [Empty]");
@@ -105,7 +126,7 @@ public class Tier2 {
 
             System.out.print(
                     process
-                    + "(remaining: " + process.remainingTime
+                    + " (remaining: " + process.remainingTime
                     + ", Priority: " + process.currPriority + ")"
             );
 
