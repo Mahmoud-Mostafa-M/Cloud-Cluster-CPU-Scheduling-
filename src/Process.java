@@ -1,5 +1,5 @@
 public class Process {
-    public int id, arrivalTime, burstTime, iniPriority, currPriority, remainingTime, startTime, finishTime;
+    public int id, arrivalTime, burstTime, iniPriority, currPriority, remainingTime, startTime, finishTime, tier2EntryTime;
 
     public Process(int id, int arrivalTime, int burstTime, int iniPriority) {
         this.id = id;
@@ -10,6 +10,7 @@ public class Process {
         this.remainingTime = burstTime;
         this.startTime = -1;
         this.finishTime = -1;
+        this.tier2EntryTime = -1;
     }
 
     @Override
