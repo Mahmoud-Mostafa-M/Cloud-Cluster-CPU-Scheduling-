@@ -1,143 +1,219 @@
 import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.Queue;
 
 public class ACS {
 
-    Tier1 tier1 = new Tier1();
+    // Tier 1: Preemptive Round Robin queue
+    Queue<Process> tier1Queue = new LinkedList<>();
+
+    // Tier 2: Non-preemptive Priority queue (Tier2.java)
     Tier2 tier2 = new Tier2();
+
+    // Tier 3: Aging (Tier3.java)
     Tier3 tier3 = new Tier3();
+
+    // Completed processes
     ArrayList<Process> completedProcesses = new ArrayList<>();
 
-    Process[] processes;
-    boolean[] arrived;
+    // Timeline / Demotion Matrix log
+    ArrayList<String> demotionMatrix = new ArrayList<>();
 
     int currentTime = 0;
+    Process currentProcess = null;
     Process lastExecuted = null;
+    boolean runningTier2 = false;
 
     public ArrayList<Process> startSimulation(Process[] processes, int quantum, int cs) {
-
         if (quantum <= 0 || cs < 0) {
             throw new IllegalArgumentException(
                     "Quantum must be positive and Context Switch cannot be negative."
             );
         }
 
-        tier1 = new Tier1();
+        tier1Queue.clear();
         tier2 = new Tier2();
         completedProcesses.clear();
-        this.processes = processes;
-        arrived = new boolean[processes.length];
+        demotionMatrix.clear();
+
         currentTime = 0;
+        currentProcess = null;
         lastExecuted = null;
+        runningTier2 = false;
+
+        boolean[] arrived = new boolean[processes.length];
+        int quantumUsed = 0;
+        int csRemaining = 0;
+        Process pendingProcess = null;
+        boolean pendingIsTier2 = false;
 
         while (completedProcesses.size() < processes.length) {
+            // 1. Add newly arrived processes to Tier 1
+            addArrivedProcesses(processes, arrived);
 
-            addArrivals();
+            // 2. If CPU is free and not mid-context-switch, select next process
+            if (csRemaining == 0 && currentProcess == null) {
+                Process nextCandidate = null;
+                boolean nextIsTier2 = false;
 
-            if (!tier1.isEmpty()) {
-                // Tier 1: Round Robin
-                Process nextProcess = tier1.pollNextProcess();
-                contextSwitch(nextProcess, cs);
-                runTier1(nextProcess, quantum);
+                if (!tier1Queue.isEmpty()) {
+                    nextCandidate = tier1Queue.poll();
+                    nextIsTier2 = false;
+                } else if (!tier2.isEmpty()) {
+                    // Tier 3 Aging: recalculate priority of waiting Tier 2 processes
+                    tier3.applyAging(tier2, currentTime);
 
-            } else if (!tier2.isEmpty()) {
-                // Tier 2 only runs when Tier 1 is empty; aging (Tier 3) is applied before choosing
-                System.out.println("Time: " + currentTime + "  Tier 1 is empty -> Tier 2 chooses (aging):");
-                tier3.applyAging(tier2, currentTime);
-                Process nextProcess = tier2.startNextProcess();
-                contextSwitch(nextProcess, cs);
-                runTier2(nextProcess);
+                    nextCandidate = tier2.pollNextProcess();
+                    nextIsTier2 = true;
+                }
 
-            } else {
-                printTimeStep("IDLE");
-                currentTime++;
+                if (nextCandidate != null) {
+                    if (cs > 0 && lastExecuted != null && lastExecuted != nextCandidate) {
+                        csRemaining = cs;
+                        pendingProcess = nextCandidate;
+                        pendingIsTier2 = nextIsTier2;
+                    } else {
+                        currentProcess = nextCandidate;
+                        runningTier2 = nextIsTier2;
+                        quantumUsed = 0;
+                    }
+                }
             }
+
+            // 3. Advance 1 tick of simulation time
+            System.out.println("Time: " + currentTime);
+
+            if (csRemaining > 0) {
+                System.out.println("  Context Switching");
+                recordMatrix("CONTEXT SWITCH");
+
+                csRemaining--;
+                if (csRemaining == 0) {
+                    currentProcess = pendingProcess;
+                    runningTier2 = pendingIsTier2;
+                    pendingProcess = null;
+                    quantumUsed = 0;
+                }
+            } else if (currentProcess != null) {
+                if (currentProcess.startTime == -1) {
+                    currentProcess.startTime = currentTime;
+                }
+
+                System.out.println("  Running: " + currentProcess
+                        + " (Remaining: " + currentProcess.remainingTime + ")");
+
+                recordMatrix(currentProcess + "(" + currentProcess.remainingTime + ")");
+
+                currentProcess.remainingTime--;
+                lastExecuted = currentProcess;
+                if (!runningTier2) {
+                    quantumUsed++;
+                }
+
+                if (currentProcess.remainingTime == 0) {
+                    currentProcess.finishTime = currentTime + 1;
+                    completedProcesses.add(currentProcess);
+                    System.out.println("  Completed: " + currentProcess);
+                    currentProcess = null;
+                    runningTier2 = false;
+                } else if (!runningTier2
+                        && tier2.checkDemotion(currentProcess, quantumUsed, quantum, currentTime + 1)) {
+                    System.out.println("  Demoted to Tier 2: " + currentProcess
+                            + " (Remaining: " + currentProcess.remainingTime + ")");
+                    currentProcess = null;
+                    runningTier2 = false;
+                }
+            } else {
+                System.out.println("  IDLE");
+                recordMatrix("IDLE");
+                lastExecuted = null;
+            }
+
+            // 4. Display queue states
+            System.out.println("  Tier 1 Queue: "
+                    + (tier1Queue.isEmpty() ? "[Empty]" : queueToString(tier1Queue)));
+            System.out.println("  Tier 2 Queue: "
+                    + (tier2.isEmpty() ? "[Empty]" : queueToString(tier2.getWaitingProcesses())));
+            System.out.println("--------------------------------");
+
+            currentTime++;
         }
 
+        displayDemotionMatrix();
         return completedProcesses;
     }
 
-    // Run a Tier 1 process for at most one quantum.
-    private void runTier1(Process currentProcess, int quantum) {
-        int timeUsed = 0;
-
-        while (timeUsed < quantum && currentProcess.remainingTime > 0) {
-
-            if (currentProcess.startTime == -1) {
-                currentProcess.startTime = currentTime;
-            }
-
-            printTimeStep("Running: " + currentProcess + " [Tier 1] (remaining: "
-                    + currentProcess.remainingTime + ")");
-
-            currentProcess.remainingTime--;
-            timeUsed++;
-            currentTime++;
-            addArrivals();
-        }
-
-        lastExecuted = currentProcess;
-
-        if (currentProcess.remainingTime == 0) {
-            currentProcess.finishTime = currentTime;
-            completedProcesses.add(currentProcess);
-            System.out.println("  Completed: " + currentProcess);
-
-        } else if (tier2.checkDemotion(currentProcess, timeUsed, quantum, currentTime)) {
-            System.out.println("  Demoted to Tier 2: " + currentProcess
-                    + " (remaining: " + currentProcess.remainingTime + ")");
-        }
-    }
-
-    // Run a Tier 2 process until it finishes. Nothing can preempt it.
-    private void runTier2(Process currentProcess) {
-        boolean finished = false;
-
-        while (!finished) {
-            printTimeStep("Running: " + currentProcess + " [Tier 2] (remaining: "
-                    + currentProcess.remainingTime + ")");
-
-            finished = tier2.runOneTimeUnit(currentTime);
-            currentTime++;
-            addArrivals(); // new arrivals wait in Tier 1 until this process is done
-        }
-
-        lastExecuted = currentProcess;
-        completedProcesses.add(currentProcess);
-        System.out.println("  Completed: " + currentProcess);
-    }
-
-    // Spend cs time units switching to nextProcess (only if it is a different process).
-    private void contextSwitch(Process nextProcess, int cs) {
-        if (cs == 0 || lastExecuted == null || lastExecuted == nextProcess) {
-            return;
-        }
-
-        for (int i = 0; i < cs; i++) {
-            String message = "Context switch ";
-            if (lastExecuted.remainingTime > 0) {
-                message += "saves " + lastExecuted + " and ";
-            }
-            printTimeStep(message + "loads " + nextProcess);
-
-            currentTime++;
-            addArrivals(); // processes can arrive during a context switch
-        }
-    }
-
-    private void addArrivals() {
+    // Add processes that have arrived up to currentTime
+    private void addArrivedProcesses(Process[] processes, boolean[] arrived) {
         for (int i = 0; i < processes.length; i++) {
             if (!arrived[i] && processes[i].arrivalTime <= currentTime) {
-                tier1.addProcess(processes[i]);
+                tier1Queue.add(processes[i]);
                 arrived[i] = true;
             }
         }
     }
 
-    private void printTimeStep(String event) {
-        System.out.println("Time: " + currentTime + "  " + event);
-        System.out.print("  ");
-        tier1.printQueue();
-        System.out.print("  ");
-        tier2.printQueue();
+    // Record each time step in Demotion Matrix
+    private void recordMatrix(String runningProcess) {
+        String tier1State = queueToString(tier1Queue);
+        String tier2State = queueToString(tier2.getWaitingProcesses());
+
+        String row = String.format(
+                "%-6d | %-18s | %-25s | %-25s",
+                currentTime,
+                runningProcess,
+                tier1State,
+                tier2State
+        );
+
+        demotionMatrix.add(row);
+    }
+
+    // Convert queue/list to readable String
+    private String queueToString(Iterable<Process> queue) {
+        StringBuilder result = new StringBuilder();
+        boolean first = true;
+
+        for (Process p : queue) {
+            if (!first) {
+                result.append(", ");
+            }
+
+            result.append(p)
+                    .append("(")
+                    .append(p.remainingTime)
+                    .append(")");
+
+            first = false;
+        }
+
+        if (first) {
+            return "Empty";
+        }
+
+        return result.toString();
+    }
+
+    // Display Demotion Matrix
+    private void displayDemotionMatrix() {
+        System.out.println("\n========== Demotion Matrix ==========");
+        System.out.printf(
+                "%-6s | %-18s | %-25s | %-25s%n",
+                "Time",
+                "Running",
+                "Tier 1 Queue",
+                "Tier 2 Queue"
+        );
+        System.out.println(
+                "--------------------------------------------------------------------------"
+        );
+
+        for (String row : demotionMatrix) {
+            System.out.println(row);
+        }
+
+        System.out.println(
+                "=========================================================================="
+        );
     }
 }

@@ -3,14 +3,8 @@ import java.util.ArrayList;
 // Tier 2: Non-Preemptive Priority queue for processes demoted from Tier 1.
 public class Tier2 {
 
-    // Once a process is placed here it stays until it finishes, which makes Tier 2 non-preemptive.
-    private Process runningProcess = null;
-
     // Insertion order is kept, so equal priorities are served first come, first served.
     private final ArrayList<Process> readyQueue = new ArrayList<>();
-
-    // Time each process entered Tier 2, used by Tier 3 for aging.
-    private final ArrayList<Integer> enteredTier2At = new ArrayList<>();
 
     public void addProcess(Process process, int currentTime) {
         if (process == null) {
@@ -21,8 +15,8 @@ public class Tier2 {
             return;
         }
 
+        process.tier2EntryTime = currentTime;
         readyQueue.add(process);
-        enteredTier2At.add(currentTime);
     }
 
     // A process that used its whole quantum without finishing is a CPU-bound batch job.
@@ -57,45 +51,15 @@ public class Tier2 {
     public Process pollNextProcess() {
         Process nextProcess = peekNextProcess();
 
-        if (nextProcess == null) {
-            return null;
+        if (nextProcess != null) {
+            readyQueue.remove(nextProcess);
         }
-
-        int index = readyQueue.indexOf(nextProcess);
-
-        readyQueue.remove(index);
-        enteredTier2At.remove(index);
 
         return nextProcess;
     }
 
-    public Process startNextProcess() {
-        runningProcess = pollNextProcess();
-        return runningProcess;
-    }
-
-    // Returns true if the process finished in this time unit.
-    public boolean runOneTimeUnit(int currentTime) {
-        if (runningProcess == null) {
-            return false;
-        }
-
-        runningProcess.remainingTime--;
-
-        if (runningProcess.remainingTime == 0) {
-            runningProcess.finishTime = currentTime + 1;
-            runningProcess = null;
-            return true;
-        }
-        return false;
-    }
-
     public boolean isEmpty() {
         return readyQueue.isEmpty();
-    }
-
-    public int size() {
-        return readyQueue.size();
     }
 
     public ArrayList<Process> getWaitingProcesses() {
@@ -104,37 +68,10 @@ public class Tier2 {
 
     // Returns -1 if the process is not waiting in Tier 2.
     public int getWaitingTime(Process process, int currentTime) {
-        int index = readyQueue.indexOf(process);
-
-        if (index == -1) {
+        if (!readyQueue.contains(process)) {
             return -1;
         }
 
-        return currentTime - enteredTier2At.get(index);
-    }
-
-    public void printQueue() {
-        if (readyQueue.isEmpty()) {
-            System.out.println("Tier 2: [Empty]");
-            return;
-        }
-
-        System.out.print("Tier 2: [");
-
-        for (int i = 0; i < readyQueue.size(); i++) {
-            Process process = readyQueue.get(i);
-
-            System.out.print(
-                    process
-                    + " (remaining: " + process.remainingTime
-                    + ", Priority: " + process.currPriority + ")"
-            );
-
-            if (i < readyQueue.size() - 1) {
-                System.out.print(", ");
-            }
-        }
-
-        System.out.println("]");
+        return currentTime - process.tier2EntryTime;
     }
 }

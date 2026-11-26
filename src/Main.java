@@ -1,17 +1,66 @@
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Scanner;
 
 public class Main {
-    public static void main(String[] args) {
-        Process[] processes = {
+    private static Process[] createSampleProcesses() {
+        return new Process[]{
                 new Process(1, 0, 7, 2),
                 new Process(2, 1, 5, 3),
                 new Process(3, 3, 2, 1)
         };
+    }
 
-        SJF sjf = new SJF();
-        ArrayList<Process> result = sjf.startSimulation(processes, 1);
-        printMetrics(result);
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+
+        while (true) {
+            System.out.println("=== CPU Scheduler Simulator ===");
+            System.out.println("1. Preemptive SJF");
+            System.out.println("2. Adaptive Container Scheduler (ACS - Tier 1 Test)");
+            System.out.println("3. Exit");
+            System.out.print("Choose an option: ");
+
+            int choice;
+            if (scanner.hasNextInt()) {
+                choice = scanner.nextInt();
+            } else {
+                System.out.println("Invalid input. Please enter a number.\n");
+                scanner.next();
+                continue;
+            }
+
+            if (choice == 3) {
+                System.out.println("Exiting...");
+                break;
+            }
+
+            if (choice != 1 && choice != 2) {
+                System.out.println("Invalid choice. Please select 1, 2, or 3.\n");
+                continue;
+            }
+
+            System.out.print("Enter Context Switch time (CS): ");
+            int cs = scanner.nextInt();
+
+            Process[] processes = createSampleProcesses();
+            ArrayList<Process> result;
+
+            if (choice == 1) {
+                SJF sjf = new SJF();
+                result = sjf.startSimulation(processes, cs);
+            } else {
+                System.out.print("Enter Time Quantum (Q) for Tier 1: ");
+                int quantum = scanner.nextInt();
+                ACS acs = new ACS();
+                result = acs.startSimulation(processes, quantum, cs);
+            }
+
+            printMetrics(result);
+            System.out.println();
+        }
+
+        scanner.close();
     }
 
     private static void printMetrics(ArrayList<Process> processes) {
