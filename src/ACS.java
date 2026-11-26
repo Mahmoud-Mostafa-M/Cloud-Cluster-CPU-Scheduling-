@@ -138,8 +138,6 @@ public class ACS {
 
             currentTime++;
         }
-
-        displayDemotionMatrix();
         return completedProcesses;
     }
 
@@ -192,28 +190,5 @@ public class ACS {
         }
 
         return result.toString();
-    }
-
-    // Display Demotion Matrix
-    private void displayDemotionMatrix() {
-        System.out.println("\n========== Demotion Matrix ==========");
-        System.out.printf(
-                "%-6s | %-18s | %-25s | %-25s%n",
-                "Time",
-                "Running",
-                "Tier 1 Queue",
-                "Tier 2 Queue"
-        );
-        System.out.println(
-                "--------------------------------------------------------------------------"
-        );
-
-        for (String row : demotionMatrix) {
-            System.out.println(row);
-        }
-
-        System.out.println(
-                "=========================================================================="
-        );
     }
 }
